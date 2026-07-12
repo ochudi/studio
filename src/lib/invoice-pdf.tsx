@@ -1,40 +1,20 @@
-import path from "path";
-import { Document, Page, Text, View, Font, StyleSheet } from "@react-pdf/renderer";
+import { Document, Page, Text, View, StyleSheet } from "@react-pdf/renderer";
 import { formatMinor } from "@/lib/money";
 import { invoiceTotals, lineAmount, paidMinor } from "@/lib/invoice";
+import { registerPdfFonts, PDF_INK, PDF_MUTED, PDF_LINE } from "@/lib/pdf-fonts";
 import type { Client, Invoice, InvoiceItem, Payment, PaymentDetail } from "@/lib/domain";
 
 /**
  * The invoice as a client holds it: the same monochrome system as the app,
  * set in the same three faces. Vector output from @react-pdf/renderer —
- * sub-second, no Chromium. Full TTFs (not latin subsets) because ₦ lives
- * outside the latin block; money renders in Inter since JetBrains Mono has
- * no naira glyph at all.
+ * sub-second, no Chromium.
  */
 
-const fontFile = (name: string) => path.join(process.cwd(), "public", "fonts", name);
+registerPdfFonts();
 
-Font.register({
-  family: "Fraunces",
-  fonts: [{ src: fontFile("fraunces-600.ttf"), fontWeight: 600 }],
-});
-Font.register({
-  family: "Inter",
-  fonts: [
-    { src: fontFile("inter-400.ttf"), fontWeight: 400 },
-    { src: fontFile("inter-600.ttf"), fontWeight: 600 },
-  ],
-});
-Font.register({
-  family: "JetBrains Mono",
-  fonts: [{ src: fontFile("jetbrains-mono-400.ttf"), fontWeight: 400 }],
-});
-// Words break at spaces only; an invoice is no place for hyphenation.
-Font.registerHyphenationCallback((word) => [word]);
-
-const INK = "#111111";
-const MUTED = "#6f6f6f";
-const LINE = "#e2e2e2";
+const INK = PDF_INK;
+const MUTED = PDF_MUTED;
+const LINE = PDF_LINE;
 
 const s = StyleSheet.create({
   page: {

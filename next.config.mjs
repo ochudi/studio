@@ -7,6 +7,8 @@ const nextConfig = {
     // make sure Vercel's function bundle actually contains them.
     outputFileTracingIncludes: {
       "/api/invoices/[id]/pdf": ["./public/fonts/**/*"],
+      "/api/documents/[id]/pdf": ["./public/fonts/**/*"],
+      "/api/documents/[id]": ["./public/fonts/**/*"],
     },
   },
   async headers() {

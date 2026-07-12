@@ -13,6 +13,7 @@ import { invoiceTotals, paidMinor, effectiveStatus } from "@/lib/invoice";
 import PageHeader from "@/components/PageHeader";
 import EmptyState from "@/components/EmptyState";
 import Chip from "@/components/Chip";
+import ExpenseSection, { type ExpenseRowData } from "@/components/ExpenseSection";
 
 export const metadata: Metadata = { title: "Money" };
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ async function loadMoney() {
   if (!supabase) return null;
 
   const monthStart = lagosToday().slice(0, 7) + "-01";
-  const [invoicesRes, recentRes, monthRes] = await Promise.all([
+  const [invoicesRes, recentRes, monthRes, expensesRes, monthSpendRes] = await Promise.all([
     supabase
       .from("studio_invoices")
       .select(
@@ -64,12 +65,24 @@ async function loadMoney() {
       .from("studio_payments")
       .select("amount_minor, currency")
       .gte("received_at", monthStart),
+    supabase
+      .from("studio_expenses")
+      .select("*, studio_projects(name)")
+      .order("spent_at", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(8),
+    supabase
+      .from("studio_expenses")
+      .select("amount_minor, currency")
+      .gte("spent_at", monthStart),
   ]);
 
   return {
     invoices: (invoicesRes.data ?? []) as InvoiceRow[],
     recent: (recentRes.data ?? []) as unknown as PaymentRow[],
     month: monthRes.data ?? [],
+    expenses: (expensesRes.data ?? []) as unknown as ExpenseRowData[],
+    monthSpend: monthSpendRes.data ?? [],
   };
 }
 
@@ -126,14 +139,23 @@ export default async function MoneyPage() {
   const received = sumByCurrency(
     (data?.month ?? []).map((p) => ({ currency: p.currency, minor: Number(p.amount_minor) }))
   );
+  const spent = sumByCurrency(
+    (data?.monthSpend ?? []).map((x) => ({ currency: x.currency, minor: Number(x.amount_minor) }))
+  );
 
   return (
     <div>
       <PageHeader
         kicker="Money"
         title="The ledger"
-        sub="Invoices that show full value before any courtesy, and payments as they land. Expenses and profit join in the next pass."
+        sub="Invoices at full value before any courtesy, payments as they land, expenses as they leave. The overview turns it into the picture."
       >
+        <Link
+          href="/money/overview"
+          className="inline-flex items-center rounded-full border border-line px-5 py-2.5 font-mono text-fluid-xs uppercase tracking-[0.18em] text-fg transition-colors duration-300 hover:border-fg"
+        >
+          Overview
+        </Link>
         <Link
           href="/money/payments/new"
           className="inline-flex items-center rounded-full border border-line px-5 py-2.5 font-mono text-fluid-xs uppercase tracking-[0.18em] text-fg transition-colors duration-300 hover:border-fg"
@@ -150,7 +172,7 @@ export default async function MoneyPage() {
 
       <section
         aria-label="Snapshot"
-        className="grid grid-cols-1 gap-px border-b border-line bg-line sm:grid-cols-3"
+        className="grid grid-cols-1 gap-px border-b border-line bg-line sm:grid-cols-2 lg:grid-cols-4"
       >
         <Tile label="Outstanding" value={outstanding || "Nothing owed"} quiet={!outstanding} />
         <Tile
@@ -158,6 +180,7 @@ export default async function MoneyPage() {
           value={received || "Nothing yet"}
           quiet={!received}
         />
+        <Tile label={`Spent · ${monthName}`} value={spent || "Nothing"} quiet={!spent} />
         <Tile
           label="Open invoices"
           value={
@@ -219,6 +242,27 @@ export default async function MoneyPage() {
               ))}
             </ul>
           )}
+        </div>
+      </section>
+
+      <section aria-label="Expenses" className="border-b border-line px-6 py-8 md:px-10">
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
+          <p className="font-mono text-fluid-xs uppercase tracking-[0.18em] text-muted">
+            Recent expenses
+          </p>
+          <Link
+            href="/money/expenses/new"
+            className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted transition-colors hover:text-fg"
+          >
+            + New expense
+          </Link>
+        </div>
+        <div className="mt-4">
+          <ExpenseSection
+            expenses={data?.expenses ?? []}
+            showProject
+            emptyText="Nothing spent yet. Software, hosting, contractors, transport — capture it the moment it happens."
+          />
         </div>
       </section>
 

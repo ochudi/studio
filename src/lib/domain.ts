@@ -103,6 +103,36 @@ export const PAYMENT_METHODS = [
   { value: "other", label: "Other" },
 ] as const;
 
+/** Creatable document kinds; receipt/signed_contract/invoice_pdf are system rows. */
+export const DOC_KINDS = [
+  { value: "proposal", label: "Proposal" },
+  { value: "contract", label: "Contract" },
+  { value: "onboarding", label: "Onboarding pack" },
+  { value: "brief", label: "Brief" },
+  { value: "handover", label: "Handover doc" },
+  { value: "other", label: "Other" },
+] as const;
+
+export const DOC_STATUSES = [
+  { value: "draft", label: "Draft" },
+  { value: "sent", label: "Sent" },
+  { value: "signed", label: "Signed" },
+  { value: "archived", label: "Archived" },
+] as const;
+
+/** Mirrors studio_expenses_category_check. */
+export const EXPENSE_CATEGORIES = [
+  { value: "software", label: "Software" },
+  { value: "hosting", label: "Hosting" },
+  { value: "domains", label: "Domains" },
+  { value: "fonts_stock", label: "Fonts & stock" },
+  { value: "contractor", label: "Contractor" },
+  { value: "equipment", label: "Equipment" },
+  { value: "transport", label: "Transport" },
+  { value: "data_airtime", label: "Data & airtime" },
+  { value: "other", label: "Other" },
+] as const;
+
 export const HANDOVER_KINDS = [
   { value: "login", label: "Login" },
   { value: "domain", label: "Domain" },
@@ -111,6 +141,30 @@ export const HANDOVER_KINDS = [
   { value: "code", label: "Code" },
   { value: "docs", label: "Docs" },
   { value: "other", label: "Other" },
+] as const;
+
+/** Mirrors studio_events_kind_check. */
+export const EVENT_KINDS = [
+  { value: "call", label: "Call" },
+  { value: "meeting", label: "Meeting" },
+  { value: "deadline", label: "Deadline" },
+  { value: "reminder", label: "Reminder" },
+  { value: "other", label: "Other" },
+] as const;
+
+export const EVENT_STATUSES = [
+  { value: "scheduled", label: "Scheduled" },
+  { value: "done", label: "Done" },
+  { value: "cancelled", label: "Cancelled" },
+  { value: "no_show", label: "No-show" },
+] as const;
+
+/** Reminder offsets offered in the event form, in minutes before start. */
+export const REMIND_OPTIONS = [
+  { value: 10080, label: "A week before" },
+  { value: 1440, label: "A day before" },
+  { value: 60, label: "An hour before" },
+  { value: 15, label: "15 minutes before" },
 ] as const;
 
 export function labelFor(
@@ -236,6 +290,64 @@ export const paymentSchema = z.object({
   notes: optional,
 });
 
+export const expenseSchema = z.object({
+  project_id: z.string().uuid().nullish(),
+  title: trimmed.pipe(z.string().min(1, "Say what the money bought.")),
+  category: values(EXPENSE_CATEGORIES),
+  amount_minor: z.number().int().positive("The amount has to be above zero."),
+  currency: z.enum(CURRENCIES),
+  spent_at: dateStr,
+  billable: z.boolean().default(false),
+  receipt_document_id: z.string().uuid().nullish(),
+  notes: optional,
+});
+
+/** The block contract, enforced at the API boundary before content lands. */
+const blockSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("heading"), text: z.string() }),
+  z.object({ type: z.literal("text"), text: z.string() }),
+  z.object({ type: z.literal("list"), items: z.array(z.string()) }),
+  z.object({
+    type: z.literal("pricing"),
+    currency: z.enum(CURRENCIES),
+    rows: z.array(
+      z.object({
+        label: z.string(),
+        detail: z.string(),
+        amount_minor: z.number().int().min(0).nullable(),
+      })
+    ),
+  }),
+  z.object({ type: z.literal("questions"), items: z.array(z.string()) }),
+  z.object({
+    type: z.literal("signatures"),
+    parties: z.array(z.object({ label: z.string(), name: z.string() })),
+  }),
+]);
+
+export const docContentSchema = z.object({
+  blocks: z.array(blockSchema).min(1, "A document needs at least one block."),
+});
+
+export const documentCreateSchema = z.object({
+  client_id: z.string().uuid().nullish(),
+  project_id: z.string().uuid().nullish(),
+  kind: values(DOC_KINDS),
+  title: trimmed.pipe(z.string().min(1, "Name the document.")),
+  template_id: z.string().uuid().nullish(),
+  duplicate_of: z.string().uuid().nullish(),
+});
+
+export const documentEditSchema = z.object({
+  title: trimmed.pipe(z.string().min(1, "Name the document.")),
+  content: docContentSchema,
+});
+
+export const templateEditSchema = z.object({
+  name: trimmed.pipe(z.string().min(1, "Name the template.")),
+  content: docContentSchema,
+});
+
 /** Per-currency payment instructions rendered onto invoices. */
 export const paymentDetailSchema = z.object({
   label: trimmed.pipe(z.string().min(1, "Name the payment route.")),
@@ -255,6 +367,30 @@ export const handoverSchema = z.object({
   label: trimmed.pipe(z.string().min(1, "Name the item.")),
   kind: values(HANDOVER_KINDS),
   detail: optional,
+});
+
+export const eventSchema = z.object({
+  client_id: z.string().uuid().nullish(),
+  project_id: z.string().uuid().nullish(),
+  title: trimmed.pipe(z.string().min(1, "Name the event.")),
+  kind: values(EVENT_KINDS),
+  starts_at: z.string().datetime({ offset: true }),
+  ends_at: z.string().datetime({ offset: true }).nullish(),
+  location: optional,
+  agenda: optional,
+  remind_minutes: z.array(z.number().int().positive()).max(4).default([1440, 60]),
+});
+
+/** Closing out an event; scheduled is never a destination. */
+export const eventCloseSchema = z.object({
+  status: z.enum(["done", "cancelled", "no_show"]),
+  outcome: optional,
+});
+
+export const pushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) }),
+  device_label: optional,
 });
 
 export type Client = {
@@ -382,6 +518,47 @@ export type Payment = {
   created_at: string;
 };
 
+export type StudioDocument = {
+  id: string;
+  client_id: string | null;
+  project_id: string | null;
+  kind: string;
+  title: string;
+  source: string;
+  template_id: string | null;
+  content: unknown;
+  status: string;
+  storage_path: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  sent_at: string | null;
+  signed_at: string | null;
+  created_at: string;
+};
+
+export type DocTemplate = {
+  id: string;
+  kind: string;
+  name: string;
+  content: unknown;
+  is_default: boolean;
+};
+
+export type Expense = {
+  id: string;
+  project_id: string | null;
+  title: string;
+  category: string;
+  amount_minor: number;
+  currency: string;
+  fx_rate_to_base: number | null;
+  spent_at: string;
+  billable: boolean;
+  receipt_document_id: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
 export type PaymentDetail = { label: string; lines: string[] };
 
 export type StudioSettings = {
@@ -400,4 +577,44 @@ export type HandoverItem = {
   kind: string;
   detail: string | null;
   transferred_at: string | null;
+};
+
+export type StudioEvent = {
+  id: string;
+  client_id: string | null;
+  project_id: string | null;
+  title: string;
+  kind: string;
+  starts_at: string;
+  ends_at: string | null;
+  location: string | null;
+  agenda: string | null;
+  outcome: string | null;
+  status: string;
+  remind_minutes: number[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type Reminder = {
+  id: string;
+  due_at: string;
+  kind: string;
+  title: string;
+  body: string | null;
+  url: string | null;
+  client_id: string | null;
+  project_id: string | null;
+  event_id: string | null;
+  sent_at: string | null;
+  channels: string[];
+  created_at: string;
+};
+
+export type PushDevice = {
+  id: string;
+  endpoint: string;
+  device_label: string | null;
+  created_at: string;
+  last_used_at: string | null;
 };

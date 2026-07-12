@@ -8,7 +8,15 @@ import { COOKIE_NAME, verifyToken } from "@/lib/auth";
  * before any session exists.
  */
 
-const PUBLIC_PATHS = new Set(["/login", "/api/auth", "/manifest.webmanifest", "/sw.js"]);
+// /api/cron carries no cookie (Vercel's scheduler calls it); the route
+// itself refuses anything without the CRON_SECRET bearer token.
+const PUBLIC_PATHS = new Set([
+  "/login",
+  "/api/auth",
+  "/api/cron",
+  "/manifest.webmanifest",
+  "/sw.js",
+]);
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
