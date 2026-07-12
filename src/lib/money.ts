@@ -5,6 +5,9 @@
  */
 
 export const CURRENCIES = ["NGN", "USD", "GBP", "EUR", "CAD"] as const;
+
+/** Settled decision: naira is what gets spent, so reports read in it. */
+export const BASE_CURRENCY = "NGN";
 export type Currency = (typeof CURRENCIES)[number];
 
 const SYMBOL: Record<string, string> = {

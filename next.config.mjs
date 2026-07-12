@@ -2,6 +2,13 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  experimental: {
+    // The invoice PDF reads its fonts off the filesystem at render time;
+    // make sure Vercel's function bundle actually contains them.
+    outputFileTracingIncludes: {
+      "/api/invoices/[id]/pdf": ["./public/fonts/**/*"],
+    },
+  },
   async headers() {
     return [
       {

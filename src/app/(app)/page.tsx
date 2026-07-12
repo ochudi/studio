@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getSupabase } from "@/lib/supabase";
 import { formatMinor } from "@/lib/money";
+import { OPEN_INVOICE_STATUSES } from "@/lib/domain";
+import { invoiceTotals, paidMinor } from "@/lib/invoice";
 import EmptyState from "@/components/EmptyState";
 import Chip from "@/components/Chip";
 
@@ -21,12 +23,28 @@ type FollowUp = {
   studio_clients: { name: string } | null;
 };
 
+type DueMilestone = {
+  id: string;
+  due_date: string;
+  title: string;
+  studio_projects: { id: string; name: string } | null;
+};
+
+/** Follow-ups and due milestones interleave into one date-ordered queue. */
+type Move = {
+  key: string;
+  href: string;
+  context: string | null;
+  text: string;
+  date: string;
+};
+
 type Snapshot = {
   activeProjects: number;
   clientCount: number;
   outstanding: { currency: string; minor: number }[];
   nextEvent: { title: string; starts_at: string } | null;
-  followUps: FollowUp[];
+  moves: Move[];
   configured: boolean;
 };
 
@@ -35,9 +53,14 @@ const EMPTY: Snapshot = {
   clientCount: 0,
   outstanding: [],
   nextEvent: null,
-  followUps: [],
+  moves: [],
   configured: false,
 };
+
+function horizonDate(days: number): string {
+  const d = new Date(Date.now() + days * 86400000);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Africa/Lagos" }).format(d);
+}
 
 async function loadSnapshot(): Promise<Snapshot> {
   const supabase = getSupabase();
@@ -45,15 +68,17 @@ async function loadSnapshot(): Promise<Snapshot> {
     return EMPTY;
   }
 
-  const [projects, invoices, events, clients, followUps] = await Promise.all([
+  const [projects, invoices, events, clients, followUps, milestones] = await Promise.all([
     supabase
       .from("studio_projects")
       .select("id", { count: "exact", head: true })
       .in("status", ["onboarding", "active", "in_review"]),
     supabase
       .from("studio_invoices")
-      .select("currency, studio_invoice_items(quantity, unit_minor), discount_pct, tax_pct")
-      .in("status", ["sent", "partially_paid", "overdue"]),
+      .select(
+        "currency, discount_pct, tax_pct, studio_invoice_items(quantity, unit_minor), studio_payments(amount_minor, currency)"
+      )
+      .in("status", OPEN_INVOICE_STATUSES),
     supabase
       .from("studio_events")
       .select("title, starts_at")
@@ -71,24 +96,55 @@ async function loadSnapshot(): Promise<Snapshot> {
       .not("follow_up_on", "is", null)
       .order("follow_up_on", { ascending: true })
       .limit(8),
+    supabase
+      .from("studio_milestones")
+      .select("id, title, due_date, studio_projects(id, name)")
+      .is("completed_at", null)
+      .not("due_date", "is", null)
+      .lte("due_date", horizonDate(7))
+      .order("due_date", { ascending: true })
+      .limit(8),
   ]);
 
+  // What's actually still owed: invoice totals minus what has already landed.
   const byCurrency = new Map<string, number>();
   for (const inv of invoices.data ?? []) {
-    const items = (inv.studio_invoice_items ?? []) as { quantity: number; unit_minor: number }[];
-    const gross = items.reduce((sum, it) => sum + Number(it.quantity) * Number(it.unit_minor), 0);
-    const net = Math.round(
-      gross * (1 - Number(inv.discount_pct ?? 0) / 100) * (1 + Number(inv.tax_pct ?? 0) / 100)
+    const { total } = invoiceTotals(
+      inv.studio_invoice_items ?? [],
+      Number(inv.discount_pct ?? 0),
+      Number(inv.tax_pct ?? 0)
     );
-    byCurrency.set(inv.currency, (byCurrency.get(inv.currency) ?? 0) + net);
+    const balance = Math.max(0, total - paidMinor(inv.studio_payments ?? [], inv.currency));
+    if (balance > 0) {
+      byCurrency.set(inv.currency, (byCurrency.get(inv.currency) ?? 0) + balance);
+    }
   }
+
+  const moves: Move[] = [
+    ...((followUps.data ?? []) as unknown as FollowUp[]).map((f) => ({
+      key: `follow:${f.id}`,
+      href: `/clients/${f.client_id}`,
+      context: f.studio_clients?.name ?? null,
+      text: f.summary,
+      date: f.follow_up_on,
+    })),
+    ...((milestones.data ?? []) as unknown as DueMilestone[]).map((m) => ({
+      key: `milestone:${m.id}`,
+      href: m.studio_projects ? `/projects/${m.studio_projects.id}` : "/projects",
+      context: m.studio_projects?.name ?? null,
+      text: m.title,
+      date: m.due_date,
+    })),
+  ]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 8);
 
   return {
     activeProjects: projects.count ?? 0,
     clientCount: clients.count ?? 0,
     outstanding: Array.from(byCurrency, ([currency, minor]) => ({ currency, minor })),
     nextEvent: events.data?.[0] ?? null,
-    followUps: (followUps.data ?? []) as unknown as FollowUp[],
+    moves,
     configured: true,
   };
 }
@@ -175,24 +231,22 @@ export default async function TodayPage() {
               title="Supabase isn't connected."
               body="Copy .env.example to .env.local, reuse the site's SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY, and run the migration in supabase/migrations."
             />
-          ) : snap.followUps.length > 0 ? (
+          ) : snap.moves.length > 0 ? (
             <ul className="divide-y divide-line border-y border-line">
-              {snap.followUps.map((f) => {
-                const overdue = f.follow_up_on <= lagosToday();
+              {snap.moves.map((m) => {
+                const overdue = m.date <= lagosToday();
                 return (
-                  <li key={f.id}>
+                  <li key={m.key}>
                     <Link
-                      href={`/clients/${f.client_id}`}
+                      href={m.href}
                       className="flex items-center justify-between gap-4 px-2 py-4 transition-colors hover:bg-raised"
                     >
                       <p className="min-w-0 truncate text-fluid-sm">
-                        {f.studio_clients?.name && (
-                          <span className="text-muted">{f.studio_clients.name} · </span>
-                        )}
-                        {f.summary}
+                        {m.context && <span className="text-muted">{m.context} · </span>}
+                        {m.text}
                       </p>
                       <Chip filled={overdue}>
-                        {overdue ? "Due" : ""} {followFmt.format(new Date(f.follow_up_on + "T12:00:00Z"))}
+                        {overdue ? "Due" : ""} {followFmt.format(new Date(m.date + "T12:00:00Z"))}
                       </Chip>
                     </Link>
                   </li>
@@ -202,7 +256,7 @@ export default async function TodayPage() {
           ) : snap.clientCount === 0 ? (
             <EmptyState
               title="Start with a client."
-              body="Add the people you already work with — everything else hangs off their record. The projects you've collected payment for come in the next chunk."
+              body="Add the people you already work with — everything else hangs off their record, including the projects already in flight."
             />
           ) : (
             <EmptyState

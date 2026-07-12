@@ -25,7 +25,13 @@ function nowLocal(): string {
   return d.toISOString().slice(0, 16);
 }
 
-export default function LogForm({ clientId }: { clientId: string }) {
+export default function LogForm({
+  clientId,
+  projectId,
+}: {
+  clientId: string;
+  projectId?: string;
+}) {
   const router = useRouter();
   const [channel, setChannel] = useState("whatsapp");
   const [direction, setDirection] = useState<"in" | "out">("in");
@@ -48,6 +54,7 @@ export default function LogForm({ clientId }: { clientId: string }) {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           client_id: clientId,
+          project_id: projectId ?? null,
           channel,
           direction,
           occurred_at: new Date(occurredAt).toISOString(),

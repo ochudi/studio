@@ -142,19 +142,32 @@ export default async function ClientPage({
       </section>
 
       <section aria-label="Projects" className="border-b border-line px-6 py-8 md:px-10">
-        <p className="font-mono text-fluid-xs uppercase tracking-[0.18em] text-muted">Projects</p>
+        <div className="flex flex-wrap items-baseline justify-between gap-4">
+          <p className="font-mono text-fluid-xs uppercase tracking-[0.18em] text-muted">Projects</p>
+          <Link
+            href={`/projects/new?client=${c.id}`}
+            className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted transition-colors hover:text-fg"
+          >
+            + New project
+          </Link>
+        </div>
         <div className="mt-4">
           {projects.length === 0 ? (
             <EmptyState
               title="No projects on record."
-              body="Project tracking lands in the next chunk; anything added then shows up here."
+              body="Anything already in flight backfills cleanly — stage, quote and money collected."
             />
           ) : (
             <ul className="divide-y divide-line border-y border-line">
               {projects.map((p) => (
-                <li key={p.id} className="flex items-center justify-between gap-4 px-2 py-4">
-                  <p className="truncate text-fluid-sm">{p.name}</p>
-                  <Chip>{p.status.replace(/_/g, " ")}</Chip>
+                <li key={p.id}>
+                  <Link
+                    href={`/projects/${p.id}`}
+                    className="flex items-center justify-between gap-4 px-2 py-4 transition-colors hover:bg-raised"
+                  >
+                    <p className="truncate text-fluid-sm">{p.name}</p>
+                    <Chip>{p.status.replace(/_/g, " ")}</Chip>
+                  </Link>
                 </li>
               ))}
             </ul>
